@@ -1,0 +1,12 @@
+# Finais de linha LF no repositório, independentemente do sistema operacional.
+# O projeto foi editado em Windows e Linux, e os arquivos acabaram com uma
+# mistura de CRLF e LF — o que faz o git marcar como alterado um arquivo em que
+# ninguém tocou, e polui o diff de qualquer commit.
+* text=auto eol=lf
+
+# Binários: nunca converter.
+*.zip   binary
+*.xlsx  binary
+*.png   binary
+*.db    binary
+*.parquet binary

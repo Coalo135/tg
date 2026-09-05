@@ -1,0 +1,17 @@
+# Dependências de execução.
+#
+# `supabase` e `python-dotenv` saíram na migração para SQLite: o banco agora é um
+# arquivo local, então não há cliente HTTP nem credenciais para carregar.
+# O sqlite3 é da biblioteca padrão e não aparece aqui.
+
+pandas>=2.0
+openpyxl>=3.1          # leitura das planilhas .xlsx do INEP
+pyarrow>=14.0          # cache parquet do módulo ML
+
+fastapi>=0.110
+uvicorn>=0.27          # servidor da API
+requests>=2.31         # download das planilhas do INEP (rota /baixar)
+
+scikit-learn>=1.4
+matplotlib>=3.7
+seaborn>=0.13

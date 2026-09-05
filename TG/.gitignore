@@ -1,0 +1,25 @@
+# Ambiente virtual e cache do Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Banco local. É um artefato derivado: reconstruído por
+# `python -m DataBase.importData` a partir dos .zip de Planilhas/.
+sqlite_ideb.db
+sqlite_ideb.db-wal
+sqlite_ideb.db-shm
+
+# Planilhas descompactadas (~131 MB). O que fica versionado são os .zip
+# correspondentes, com as partes OOXML recomprimidas em LZMA (~60 MB).
+# Ver Dados/descompactar.py.
+Planilhas/*.xlsx
+Planilhas/downloads/
+
+# Caches e saídas geradas (todos reproduzíveis pelos scripts)
+ML/cache_*.parquet
+ML/saidas/
+Visualizacao/saidas/
+Exportacao/saidas/
