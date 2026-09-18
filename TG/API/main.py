@@ -11,7 +11,7 @@ import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from API.rotas import dados, estatisticas
+from API.rotas import dados, estatisticas, modelos
 from Dados.inep_download import baixar_planilha
 from Dados.planilhas import PLANILHAS, por_chave
 
@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="IDEB API",
-    description="Consulta e estatísticas sobre os dados do IDEB (INEP).",
+    description=("Consulta, estatísticas e modelos (INSE × IDEB, clusterização) "
+                 "sobre os dados do IDEB (INEP)."),
 )
 
 # Permissivo de propósito (projeto acadêmico, sem front-end em produção ainda).
@@ -33,6 +34,7 @@ app.add_middleware(
 
 app.include_router(dados.router)
 app.include_router(estatisticas.router)
+app.include_router(modelos.router)
 
 
 @app.get("/planilhas", tags=["ingestao"])

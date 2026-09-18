@@ -99,6 +99,10 @@ do projeto (`from Dados.consulta_ideb import ...`) e são executados com `python
 | `GET /estatisticas?...` | Médias agregadas, prontas para gráfico |
 | `GET /comparacao-meta?...` | IDEB observado vs. meta do INEP (`resumo` + `detalhes`) |
 | `GET /evolucao?anos=2019&anos=2021...` | Série histórica do IDEB médio |
+| `GET /modelos/anos` | Anos com INSE — os únicos em que os modelos existem |
+| `GET /modelos/relacao-inse-ideb?nivel_ensino=` | Modelo 1: reta IDEB ~ INSE e o resíduo de cada município, ranqueado |
+| `GET /modelos/agrupamento?nivel_ensino=` | Modelo 2: clusters (K-means), perfil de cada um e outliers |
+| `GET /modelos/municipio/{codigo}?nivel_ensino=` | A "previsão" de um município: observado, previsto pelo INSE, resíduo, posição, cluster |
 | `GET /planilhas` | Catálogo (IDEB e INSE) e o que já está em disco |
 | `GET /baixar?chave=inse_municipios_2023` | Baixa uma planilha do INEP e deixa o `.xlsx` pronto |
 

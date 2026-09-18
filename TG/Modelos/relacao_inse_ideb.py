@@ -67,8 +67,12 @@ def destaques(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     return extremos
 
 
-def executar(nivel_ensino: str, ano: int, grafico: GeradorGrafico | None = None) -> dict | None:
-    """Roda o modelo para um nível/ano; grava CSV de resíduos e PNG; devolve o ajuste."""
+def calcular(nivel_ensino: str, ano: int) -> dict | None:
+    """Par + ajuste + resíduos, sem gravar nada — o que a API e o CLI compartilham.
+
+    `municipios` vem ordenado por resíduo decrescente, com `posicao` (1 = o maior
+    resíduo positivo do país). Devolve None se não houver base para ajustar.
+    """
     pares, descartes = carregar_pares(nivel_ensino, ano=ano)
     if len(pares) < 3:
         logger.warning("%s/%d: sem base (%d pares)", nivel_ensino, ano, len(pares))
@@ -76,13 +80,23 @@ def executar(nivel_ensino: str, ano: int, grafico: GeradorGrafico | None = None)
 
     ajuste = ajustar_reta(pares)
     com_residuo = calcular_residuos(pares, ajuste["inclinacao"], ajuste["intercepto"])
+    com_residuo = com_residuo.sort_values("residuo", ascending=False).reset_index(drop=True)
+    com_residuo["posicao"] = range(1, len(com_residuo) + 1)
+    return {"nivel_ensino": nivel_ensino, "ano": ano, "ajuste": ajuste,
+            "descartes": descartes, "municipios": com_residuo}
+
+
+def executar(nivel_ensino: str, ano: int, grafico: GeradorGrafico | None = None) -> dict | None:
+    """Roda o modelo para um nível/ano; grava CSV de resíduos e PNG; devolve o ajuste."""
+    resultado = calcular(nivel_ensino, ano)
+    if resultado is None:
+        return None
+    ajuste, descartes, com_residuo = (resultado["ajuste"], resultado["descartes"],
+                                      resultado["municipios"])
     extremos = destaques(com_residuo)
 
     sufixo = f"{nivel_ensino}_{ano}"
-    csv = exportar_para_csv(
-        com_residuo.sort_values("residuo", ascending=False),
-        PASTA_MODELOS / f"residuos_{sufixo}.csv",
-    )
+    csv = exportar_para_csv(com_residuo, PASTA_MODELOS / f"residuos_{sufixo}.csv")
     png = (grafico or GeradorGrafico(PASTA_MODELOS)).dispersao(
         com_residuo, X, Y,
         reta=(ajuste["inclinacao"], ajuste["intercepto"]),
@@ -95,15 +109,11 @@ def executar(nivel_ensino: str, ano: int, grafico: GeradorGrafico | None = None)
     )
 
     sobral = com_residuo[com_residuo["codigo_municipio"] == SOBRAL]
-    posicao_sobral = None
-    if not sobral.empty:
-        posicao_sobral = int((com_residuo["residuo"] > float(sobral["residuo"].iloc[0])).sum()) + 1
-
     return {
         "nivel_ensino": nivel_ensino, "ano": ano, **ajuste,
         "descartes": descartes, "csv": csv, "png": png,
         "sobral_residuo": None if sobral.empty else float(sobral["residuo"].iloc[0]),
-        "sobral_posicao": posicao_sobral,
+        "sobral_posicao": None if sobral.empty else int(sobral["posicao"].iloc[0]),
     }
 
 

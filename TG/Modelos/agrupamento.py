@@ -83,7 +83,8 @@ def outliers_por_cluster(df: pd.DataFrame, n: int = 5) -> pd.DataFrame:
               .sort_values(["cluster", "residuo"], ascending=[True, False]))
 
 
-def executar(nivel_ensino: str, ano: int) -> dict | None:
+def calcular(nivel_ensino: str, ano: int) -> dict | None:
+    """Agrupamento completo, sem gravar nada — o que a API e o CLI compartilham."""
     pares, descartes = carregar_pares(nivel_ensino, ano=ano)
     pares = pares.dropna(subset=list(FEATURES)).reset_index(drop=True)
     if len(pares) < max(KS) * 5:
@@ -97,8 +98,20 @@ def executar(nivel_ensino: str, ano: int) -> dict | None:
     avaliacao = avaliar_k(padronizar(pares))
     k = escolher_k(avaliacao)
     agrupado = agrupar(pares, k)
-    perfil = perfil_clusters(agrupado)
-    outliers = outliers_por_cluster(agrupado)
+    return {
+        "nivel_ensino": nivel_ensino, "ano": ano, "k": k, "descartes": descartes,
+        "avaliacao": avaliacao, "perfil": perfil_clusters(agrupado),
+        "outliers": outliers_por_cluster(agrupado), "municipios": agrupado,
+    }
+
+
+def executar(nivel_ensino: str, ano: int) -> dict | None:
+    resultado = calcular(nivel_ensino, ano)
+    if resultado is None:
+        return None
+    k, descartes, avaliacao = resultado["k"], resultado["descartes"], resultado["avaliacao"]
+    agrupado, perfil, outliers = (resultado["municipios"], resultado["perfil"],
+                                  resultado["outliers"])
 
     sufixo = f"{nivel_ensino}_{ano}"
     exportar_para_csv(agrupado.sort_values(["cluster", "residuo"], ascending=[True, False]),
@@ -127,9 +140,7 @@ def executar(nivel_ensino: str, ano: int) -> dict | None:
         print("\nReferências da literatura:")
         print(referencia[colunas].to_string(index=False))
     print(f"\nGráfico: {png}")
-
-    return {"nivel_ensino": nivel_ensino, "ano": ano, "k": k, "n": len(agrupado),
-            "avaliacao": avaliacao, "perfil": perfil, "outliers": outliers}
+    return resultado
 
 
 def main():
