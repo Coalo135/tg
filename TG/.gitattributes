@@ -9,4 +9,3 @@
 *.xlsx  binary
 *.png   binary
 *.db    binary
-*.parquet binary

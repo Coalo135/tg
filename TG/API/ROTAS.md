@@ -24,14 +24,11 @@ O projeto tem um pipeline de dados completo:
    2005–2025).
 3. **Estatísticas** — médias, comparação do IDEB observado com a meta que o INEP projeta pra
    cada escola/município, evolução histórica.
-4. **Machine Learning** — um modelo de regressão que aprende com o histórico de cada município
-   e projeta o IDEB do próximo ciclo (hoje 2027, lido do banco), comparando com a meta oficial.
-5. **Estudo de caso** — o foco final é o Ceará (Sobral é citado como referência na literatura
+4. **Estudo de caso** — o foco final é o Ceará (Sobral é citado como referência na literatura
    sobre o tema, por ter saído de notas baixas pra se tornar destaque nacional).
 
 **Esta API** (FastAPI) expõe esse pipeline via HTTP pra alimentar um front-end (dashboard) que
-vai visualizar esses dados: gráficos de evolução, comparação com metas, e as projeções do
-modelo de ML.
+vai visualizar esses dados: gráficos de evolução e comparação com metas.
 
 ---
 
@@ -186,53 +183,12 @@ Já vem ordenado por ano — plote direto, `x = ano`, `y = ideb_medio`.
 
 ---
 
-## `GET /previsao/{codigo_municipio}`
-
-Projeta o IDEB do próximo ciclo (2025) pra um município, usando o modelo de ML treinado.
-
-**Path param:** `codigo_municipio` (string, código IBGE).
-**Query param:** `nivel` (**obrigatório**) — `anos_iniciais` ou `anos_finais`.
-
-```
-GET /previsao/2312908?nivel=anos_finais
-```
-```json
-{
-  "municipio": "Sobral",
-  "codigo_municipio": "2312908",
-  "nivel_ensino": "anos_finais",
-  "ideb_2023": 7.9,
-  "previsao_2025": 7.09,
-  "tendencia": "queda",
-  "ultima_meta_oficial": 5.3,
-  "ano_ultima_meta": 2021,
-  "veredito": "acima da última meta oficial",
-  "modelo": "regressao_linear",
-  "mae_validacao": 0.33
-}
-```
-
-**⚠️ Primeira chamada da API demora (~30s)** — é quando o modelo é treinado (lê a base do
-SQLite + treina). As chamadas seguintes usam cache em memória e respondem em ~50ms. Se o
-front-end chamar essa rota assim que a API sobe, mostre um loading — não é a rota travando.
-
-**`nivel` inválido:**
-```
-GET /previsao/2304400?nivel=ensino_medio
-```
-```json
-{ "detail": "nivel deve ser um de ('anos_iniciais', 'anos_finais')" }
-```
-`HTTP 400`
-
-**Município/nível sem dado suficiente no último ciclo** → `HTTP 404`.
-
----
-
 ## `GET /baixar` (não é pro front-end)
 
-Baixa uma planilha bruta do INEP pro disco do servidor. É uma rotina de ingestão interna, não
-devolve dado nenhum pra exibir — pode ignorar essa rota na hora de montar as telas.
+Baixa uma planilha bruta do INEP pro disco do servidor e deixa o `.xlsx` pronto. É uma rotina
+de ingestão interna, não devolve dado nenhum pra exibir — pode ignorar essa rota na hora de
+montar as telas. As chaves válidas (IDEB e INSE) estão em `GET /planilhas`, que também diz o
+`layout` de cada uma e se o `.zip`/`.xlsx` já está em disco.
 
 ---
 
@@ -247,4 +203,3 @@ devolve dado nenhum pra exibir — pode ignorar essa rota na hora de montar as t
 | KPI/pizza "quantos atingiram a meta" | `GET /comparacao-meta?...` → `resumo` |
 | Tabela/dispersão IDEB × meta | `GET /comparacao-meta?...` → `detalhes` |
 | Gráfico de linha (evolução temporal) | `GET /evolucao?anos=...` |
-| Card de projeção 2025 | `GET /previsao/{codigo}?nivel=...` |

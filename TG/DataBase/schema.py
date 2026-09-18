@@ -56,13 +56,44 @@ CREATE INDEX IF NOT EXISTS idx_ideb_municipio ON ideb_resultados (codigo_municip
 CREATE INDEX IF NOT EXISTS idx_ideb_escola    ON ideb_resultados (codigo_escola);
 CREATE INDEX IF NOT EXISTS idx_ideb_sigla_uf  ON ideb_resultados (sigla_uf);
 
--- A consulta mais frequente do módulo ML e da API é "município + rede + nível";
+-- A consulta mais frequente da API e das análises é "município + rede + nível";
 -- sem este índice ela varre a tabela inteira.
 CREATE INDEX IF NOT EXISTS idx_ideb_abrangencia_rede
     ON ideb_resultados (abrangencia, rede, nivel_ensino, ano);
 
 CREATE INDEX IF NOT EXISTS idx_municipios_uf ON municipios (sigla_uf);
 CREATE INDEX IF NOT EXISTS idx_escolas_municipio ON escolas (codigo_municipio);
+
+-- INSE: Indicador de Nível Socioeconômico dos alunos, por município (INEP/Saeb).
+-- Uma linha por (ano, município, rede, localização). `rede` usa o mesmo vocabulário
+-- de ideb_resultados para o JOIN entre as duas tabelas ser direto, sem CASE.
+CREATE TABLE IF NOT EXISTS inse_municipios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    ano              INTEGER NOT NULL,
+    codigo_municipio TEXT NOT NULL REFERENCES municipios(codigo_municipio),
+    sigla_uf         TEXT,
+    rede             TEXT NOT NULL,  -- 'Pública' | 'Municipal' | 'Estadual' | 'Federal'
+                                     -- | 'Privada' | 'Estadual+Municipal'
+    localizacao      TEXT NOT NULL,  -- 'Total' | 'Urbana' | 'Rural'
+    capital          INTEGER,        -- 1 = capital, 2 = interior (atributo do município)
+
+    qtd_alunos       INTEGER,        -- alunos com INSE calculado
+    media_inse       NUMERIC,        -- média ponderada; NULL quando não há aluno medido
+    pc_nivel_1       NUMERIC,        -- % de alunos em cada nível socioeconômico, I a VIII
+    pc_nivel_2       NUMERIC,
+    pc_nivel_3       NUMERIC,
+    pc_nivel_4       NUMERIC,
+    pc_nivel_5       NUMERIC,
+    pc_nivel_6       NUMERIC,
+    pc_nivel_7       NUMERIC,
+    pc_nivel_8       NUMERIC,
+
+    UNIQUE (ano, codigo_municipio, rede, localizacao)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inse_municipio ON inse_municipios (codigo_municipio);
+CREATE INDEX IF NOT EXISTS idx_inse_filtro    ON inse_municipios (ano, rede, localizacao);
 """
 
 

@@ -21,6 +21,8 @@ from DataBase.conexao import conectar
 ABRANGENCIAS = {"brasil", "regiao_uf", "municipio", "escola"}
 NIVEIS = {"anos_iniciais", "anos_finais", "ensino_medio"}
 REDES = {"Total", "Pública", "Privada", "Estadual", "Municipal", "Federal"}
+REDES_INSE = {"Pública", "Privada", "Estadual", "Municipal", "Federal", "Estadual+Municipal"}
+LOCALIZACOES_INSE = {"Total", "Urbana", "Rural"}
 # Ciclos bienais do IDEB, de 2005 ate o ano corrente. Era um conjunto fixo
 # terminando em 2025; assim a proxima divulgacao nao vira "ano inesperado".
 ANOS = set(range(2005, date.today().year + 1, 2))
@@ -51,7 +53,7 @@ def checar_estrutura(cur):
 
     tabelas = {r[0] for r in cur.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
-    for t in ("municipios", "escolas", "ideb_resultados"):
+    for t in ("municipios", "escolas", "ideb_resultados", "inse_municipios"):
         checar(f"tabela '{t}' existe", t in tabelas)
 
     esperadas = {
@@ -373,6 +375,77 @@ def amostra_final(cur):
            f"{len(linhas)} anos (esperado {len(ciclos_possiveis)})")
 
 
+# -------------------------------------------------------------------- INSE
+
+def checar_inse(cur):
+    titulo("11. INSE (inse_municipios)")
+
+    indices = {r[0] for r in cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='inse_municipios'")}
+    for idx in ("idx_inse_municipio", "idx_inse_filtro"):
+        checar(f"indice '{idx}' criado", idx in indices)
+
+    n = uma(cur, "SELECT COUNT(*) FROM inse_municipios")
+    if not checar("inse_municipios tem linhas", n > 0, f"{n} linhas"):
+        return
+
+    anos = {r[0] for r in cur.execute("SELECT DISTINCT ano FROM inse_municipios")}
+    checar("anos do INSE sao ciclos do IDEB", anos <= ANOS, f"{sorted(anos)}")
+    for coluna, dominio in (("rede", REDES_INSE), ("localizacao", LOCALIZACOES_INSE)):
+        valores = {r[0] for r in cur.execute(f"SELECT DISTINCT {coluna} FROM inse_municipios")}
+        fora = valores - dominio
+        checar(f"{coluna} do INSE dentro do vocabulario", not fora,
+               f"inesperados: {sorted(fora)}" if fora else "")
+
+    niveis = [f"pc_nivel_{i}" for i in range(1, 9)]
+    todos_nulos = " AND ".join(f"{c} IS NULL" for c in niveis)
+    fora_de_faixa = " OR ".join(f"{c} < 0 OR {c} > 100" for c in niveis)
+    soma = " + ".join(f"COALESCE({c}, 0)" for c in niveis)
+    regras = [
+        ("nenhum media_inse = 0 (ausencia nunca vira zero)", "media_inse = 0"),
+        ("media_inse dentro da escala do indicador (2 a 7)",
+         "media_inse IS NOT NULL AND (media_inse < 2 OR media_inse > 7)"),
+        ("nenhuma linha sem indicador algum", f"media_inse IS NULL AND {todos_nulos}"),
+        ("percentuais por nivel entre 0 e 100", fora_de_faixa),
+        ("percentuais por nivel somam 100 onde ha media",
+         f"media_inse IS NOT NULL AND ({soma} < 99.5 OR {soma} > 100.5)"),
+        ("codigo_municipio com 7 digitos", "LENGTH(codigo_municipio) <> 7"),
+    ]
+    for descricao, condicao in regras:
+        n = uma(cur, f"SELECT COUNT(*) FROM inse_municipios WHERE {condicao}")
+        checar(descricao, n == 0, f"{n} linhas violam" if n else "")
+
+    n = uma(cur, """
+        SELECT COUNT(*) FROM inse_municipios i
+        LEFT JOIN municipios m ON m.codigo_municipio = i.codigo_municipio
+        WHERE m.codigo_municipio IS NULL""")
+    checar("nenhum municipio orfao no INSE", n == 0, f"{n} orfaos" if n else "")
+
+    n = uma(cur, """
+        SELECT COUNT(*) FROM (
+            SELECT 1 FROM inse_municipios
+            GROUP BY ano, codigo_municipio, rede, localizacao HAVING COUNT(*) > 1)""")
+    checar("chave (ano, municipio, rede, localizacao) sem duplicata", n == 0)
+
+    # O par INSE x IDEB e a base dos modelos: quantos municipios com INSE tem IDEB
+    # no mesmo ano e rede? Abaixo da metade, a analise perde chao.
+    for ano in sorted(anos):
+        total = uma(cur, """
+            SELECT COUNT(*) FROM inse_municipios
+            WHERE ano = ? AND rede = 'Pública' AND localizacao = 'Total'
+              AND media_inse IS NOT NULL""", (ano,))
+        pares = uma(cur, """
+            SELECT COUNT(*) FROM inse_municipios i
+            JOIN ideb_resultados r
+              ON r.abrangencia = 'municipio' AND r.nivel_ensino = 'anos_iniciais'
+             AND r.ano = i.ano AND r.codigo_entidade = i.codigo_municipio AND r.rede = i.rede
+            WHERE i.ano = ? AND i.rede = 'Pública' AND i.localizacao = 'Total'
+              AND i.media_inse IS NOT NULL AND r.ideb IS NOT NULL""", (ano,))
+        fracao = pares / total if total else 0
+        checar(f"par INSE x IDEB (publica, anos iniciais) cobre a maioria em {ano}",
+               fracao >= 0.5, f"{pares}/{total} municipios ({100 * fracao:.0f}%)")
+
+
 def main():
     if not DB_PATH.exists():
         print(f"Banco nao encontrado em {DB_PATH}.")
@@ -392,6 +465,7 @@ def main():
         checar_json(cur)
         checar_cobertura(cur)
         amostra_final(cur)
+        checar_inse(cur)
 
     titulo("RESUMO")
     falhas = [d for d, ok in resultados if not ok]

@@ -1,21 +1,22 @@
 # Contexto do projeto — TG (IDEB)
 
 > Briefing para retomar o projeto em qualquer conversa nova. Atualizado após a
-> migração para SQLite e a importação da divulgação de 2025. Todos os números
-> abaixo foram lidos do banco, não estimados.
+> entrada do INSE no banco e a construção dos dois modelos (2026-09-17). Todos os
+> números abaixo foram lidos do banco, não estimados.
 
 ---
 
 ## 1. O que é o projeto
 
-Trabalho de Graduação: um **sistema de análise de dados do IDEB** (INEP/Brasil) com
-dois módulos de Machine Learning:
+Trabalho de Graduação: um **sistema de análise de dados do IDEB** (INEP/Brasil).
 
-1. **Clusterização** — agrupar municípios por perfil socioeconômico/pedagógico e
-   identificar outliers positivos (Sobral/CE é o caso de referência da literatura).
-   **Ainda não implementada.**
-2. **Previsão (regressão)** — prever o IDEB de um município no próximo ciclo,
-   comparar com a meta oficial do INEP, emitir veredito. **Implementada.**
+A base de dados, as estatísticas, a exportação, os gráficos e a API estão prontos.
+Sobre eles são construídos **dois modelos** (ver §4):
+
+1. **Relação INSE × IDEB** — quanto do desempenho de um município é explicado pelo
+   nível socioeconômico dos seus alunos.
+2. **Clusterização de municípios** — agrupar por perfil e identificar os outliers
+   positivos, que entregam IDEB acima do que o INSE preveria.
 
 Estudo de caso final: foco no Ceará (Sobral como destaque, Fortaleza como capital).
 Escopo de dados: Brasil inteiro desde o início.
@@ -29,21 +30,29 @@ TG/
 ├── config.py               Caminhos e constantes de todo o projeto
 ├── main.py                 Pipeline de demonstração (Brasília/DF)
 ├── Planilhas/
-│   ├── *.zip               8 arquivos, versionados no git (60 MB)
-│   └── *.xlsx              gerados por descompactar.py, fora do git (131 MB)
+│   ├── *.zip               10 arquivos (8 IDEB + 2 INSE), versionados no git (66 MB)
+│   └── *.xlsx              gerados por descompactar.py, fora do git (149 MB)
 ├── Dados/
-│   ├── planilhas.py        Catálogo: nome, abrangência, nível
+│   ├── planilhas.py        Catálogo: nome, abrangência, nível, URL, layout (ideb|inse)
+│   ├── inep_download.py    Download do INEP com o intermediário de certs/ (TLS)
 │   ├── descompactar.py     .zip -> .xlsx
-│   └── consulta_ideb.py    Consultas e filtros sobre o SQLite
+│   ├── compactar.py        .xlsx -> .zip LZMA (round-trip conferido byte a byte)
+│   ├── consulta_ideb.py    Consultas sobre o IDEB
+│   └── consulta_inse.py    Consultas sobre o INSE e o par INSE × IDEB
 ├── DataBase/
 │   ├── conexao.py          Abertura única do banco (pragmas)
-│   ├── schema.py           DDL do modelo estrela
-│   ├── importData.py       ETL das planilhas
-│   └── check_BD.py         52 verificações de integridade
+│   ├── schema.py           DDL do modelo estrela (+ inse_municipios)
+│   ├── importData.py       ETL do IDEB; chama o do INSE no fim
+│   ├── importInse.py       ETL do INSE, com as 5 regras de limpeza e a evidência
+│   └── check_BD.py         69 verificações de integridade (§11 é do INSE)
 ├── Estatistica/  Exportacao/  Visualizacao/
-├── API/          FastAPI: 11 rotas
-├── ML/           dados -> dataset -> modelos -> validacao -> prever
-└── tests/        47 testes
+├── Modelos/
+│   ├── dados.py            Par INSE × IDEB pronto para modelar (conta o descarte)
+│   ├── relacao_inse_ideb.py  Modelo 1: correlação, reta, R², resíduos
+│   ├── agrupamento.py      Modelo 2: K-means, k por silhueta, outliers por cluster
+│   └── MODELOS.md          Decisões e resultados
+├── API/          FastAPI: 10 rotas
+└── tests/        66 testes
 ```
 
 **Não existe mais `.env`.** O Supabase foi removido por completo: o banco é um
@@ -57,7 +66,7 @@ arquivo SQLite local, reconstruível a partir dos `.zip` do repositório.
 |---|---|
 | Total de linhas em `ideb_resultados` | **1.406.480** |
 | Abrangência `escola` | 1.046.734 |
-| Abrangência `municipio` | **355.720** ← unidade da regressão |
+| Abrangência `municipio` | **355.720** |
 | Abrangência `regiao_uf` | 3.872 |
 | Abrangência `brasil` | 154 |
 | Nível `anos_iniciais` / `anos_finais` / `ensino_medio` | 698.830 / 552.012 / 155.638 |
@@ -66,52 +75,47 @@ arquivo SQLite local, reconstruível a partir dos `.zip` do repositório.
 | `escolas` (dimensão) | 86.094 |
 | `ideb` NULL geral | 20,1% (dominado pelo nível escola) |
 | `ideb` NULL em município + rede Pública | **5,0%** |
-| Tamanho do arquivo `.db` | ~557 MB (não versionado) |
-| **INSE** | **não existe no schema** — falta coletar |
+| Tamanho do arquivo `.db` | ~560 MB (não versionado) |
+| **`inse_municipios`** | **112.696** linhas: 57.111 de 2023 e 55.585 de 2021 |
+| Municípios com INSE (rede pública) | 5.558 em 2023, 5.522 em 2021 |
+| Par INSE × IDEB (pública, anos iniciais) | 5.429 municípios em 2023 (98%), 5.072 em 2021 (92%) |
 
 `regiao_uf` agora está carregada (antes eram 0 linhas). Cada município tem 3 valores
-de `rede` por ciclo/nível: `Estadual`, `Municipal` e `Pública` (o agregado). A
-regressão usa `rede = "Pública"`.
+de `rede` por ciclo/nível: `Estadual`, `Municipal` e `Pública` (o agregado).
 
-`ensino_medio` só existe a partir de 2017 — curto demais para a validação temporal,
-por isso ficou de fora da regressão.
+`ensino_medio` só existe a partir de 2017 — série curta, o que limita qualquer
+análise temporal nesse nível.
+
+O INSE vem das planilhas `INSE_{2021,2023}_municipios.xlsx` do INEP (layout de uma
+linha de cabeçalho; 2019 tem outro layout e escala não comparável, ficou de fora).
+Três defeitos dos arquivos, medidos e tratados em `importInse.py`: o código de rede
+0 é cópia do 6; `MEDIA_INSE = 0` é ausência (33% das linhas de 2021); o arquivo de
+2023 repete a mesma linha dezenas de vezes (só 57 mil de 126 mil são distintas).
 
 ---
 
-## 4. Módulo de regressão (`ML/`)
+## 4. Modelos (`Modelos/`)
 
-- **Unidade:** município, `rede = "Pública"` → 120.936 linhas na base.
-- **Modelos separados por nível** (anos_iniciais / anos_finais).
-- **Alvo:** IDEB no ciclo seguinte (T+1 = T + 2 anos).
-- **Features (6):** `ideb_T`, `ideb_T_menos_1`, `variacao_ideb`, `rendimento_T`,
-  `saeb_T`, `flag_pos_pandemia`.
-- **Dataset:** 109.739 pares T→T+1, dos quais **89.893 usáveis** (18,1% descartados
-  por ausência, majoritariamente o ciclo 2005 sem T−1).
-- **Anti-vazamento:** toda feature usa só dado de ciclos ≤ T.
-- **Ausências descartadas, não imputadas**, com o custo reportado.
+Dois modelos sobre o par INSE × IDEB por município (rede pública). Detalhes,
+tabelas completas e limitações em `Modelos/MODELOS.md`.
 
-### Resultados da validação temporal
+1. **Relação INSE × IDEB** (`Modelos/relacao_inse_ideb.py`) — reta de mínimos
+   quadrados, Pearson, Spearman e R² por nível e ano. **O INSE explica de 15% a 39%
+   da variância do IDEB municipal** (R² de 0,39 nos anos iniciais de 2021 a 0,15 no
+   ensino médio de 2023); o efeito enfraquece ao longo da trajetória escolar e caiu
+   de 2021 para 2023. O produto é o **resíduo** (observado − previsto): a definição
+   operacional de outlier positivo. **Sobral/CE tem o 11º maior resíduo do país**
+   nos anos iniciais de 2023 (+4,29) e o 8º nos anos finais (+3,49), com INSE abaixo
+   da média; o topo é dominado por municípios do Ceará e de Alagoas.
+2. **Clusterização de municípios** (`Modelos/agrupamento.py`) — K-means sobre INSE,
+   IDEB, rendimento e SAEB padronizados. **A silhueta escolhe k = 2** (0,43 e 0,39):
+   os municípios formam um contínuo, não grupos separados. Sobral cai no cluster alto
+   apesar do INSE baixo; Fortaleza fica no mesmo cluster com resíduo pequeno.
+   Limitação: três das quatro features medem desempenho, então o corte é por
+   desempenho — agrupar por INSE + resíduo é o próximo passo.
 
-Rodadas derivadas dos dados: `(2019→2021)`, `(2021→2023)`, `(2023→2025)`.
-
-| Nível | Modelo vencedor | MAE | RMSE | vs baseline |
-|---|---|---|---|---|
-| anos_iniciais | regressão linear | 0,448 | 0,572 | +1,1% |
-| anos_finais | regressão linear | 0,344 | 0,454 | **+12,5%** |
-
-Random Forest não venceu em nenhum nível — a relação é majoritariamente linear.
-
-Em `anos_iniciais` a vantagem sobre o baseline ingênuo ("o IDEB não muda") é de
-apenas 1,1%: na prática, empate. Isso é resultado, não fracasso — é o "Plano B" do
-design original. Vale notar que na rodada anterior (que ia só até 2023) o baseline
-vencia nesse nível; a inclusão do ciclo 2025 inverteu a ordem por margem estreita.
-
-### Exemplos de projeção para 2027
-
-- Sobral/CE, anos_finais: IDEB 2025 = 8,0 → projeção 2027 = **7,80** (queda leve,
-  bem acima da última meta oficial, 5,3 em 2021).
-- Fortaleza/CE, anos_iniciais: IDEB 2025 = 6,1 → projeção 2027 = **6,37** (alta).
-- Fortaleza/CE, anos_finais: IDEB 2025 = 5,2 → projeção 2027 = **5,30** (alta).
+Regras que valem para os dois: nenhum ano fixo no código (vem do banco); ausência
+nunca vira zero; resultado fraco é achado válido, não bug a maquiar.
 
 ---
 
@@ -121,42 +125,36 @@ Todos pré-existentes, nenhum introduzido pela troca de banco:
 
 1. **Catálogo apontava para `_2023`** enquanto os arquivos em disco eram `_2025`.
    Nenhuma planilha seria encontrada.
-2. **`ML/prever.py` fixava `ULTIMO_CICLO = 2023`.** Com o 2025 no banco, projetaria
-   2025 a partir de 2023 — prevendo um ciclo já ocorrido.
-3. **Rodadas de validação fixas até 2023**, ignorando o ciclo mais recente.
-4. **`/baixar` gravaria por cima dos `.zip` versionados** (mesmo nome do INEP).
+2. **`/baixar` gravaria por cima dos `.zip` versionados** (mesmo nome do INEP).
    Agora baixa para `Planilhas/downloads/`.
-5. **`/baixar` usava índice numérico posicional**, que apontava para outro arquivo
+3. **`/baixar` usava índice numérico posicional**, que apontava para outro arquivo
    sempre que a ordem do catálogo mudava. Agora usa chave nomeada.
-6. **`sqLiteBD.py` criava um `.db` vazio no import**, na pasta de quem importasse.
-7. **Caminhos absolutos do Windows hardcoded** (`C:\Users\cris2\...`) em dois módulos.
-8. **`taxa_aprovacao_todas_series` quebrava com `NaN`**: testava `is None`, mas o
+4. **`sqLiteBD.py` criava um `.db` vazio no import**, na pasta de quem importasse.
+5. **Caminhos absolutos do Windows hardcoded** (`C:\Users\cris2\...`) em dois módulos.
+6. **`taxa_aprovacao_todas_series` quebrava com `NaN`**: testava `is None`, mas o
    pandas entrega `NaN` (float) para `NULL` de coluna TEXT. `AttributeError` em
    produção.
-9. **Médias retornavam `numpy.float64`**, poluindo logs e complicando o JSON da API.
-10. **`media_municipio` comparava código sem normalizar tipo** — um int devolveria
+7. **Médias retornavam `numpy.float64`**, poluindo logs e complicando o JSON da API.
+8. **`media_municipio` comparava código sem normalizar tipo** — um int devolveria
     `None` como se o município não tivesse dado.
 
 ---
 
 ## 6. O que falta
 
-1. **Clusterização (K-means)** — não iniciada.
-2. **Coletar INSE** — bloqueio da clusterização.
-3. **Estudo de caso do Ceará** detalhado, cruzando com a literatura
-   (Almeida e Vieira, 2019).
+1. **Estudo de caso do Ceará** detalhado, cruzando com a literatura
+   (Almeida e Vieira, 2019) — o modelo 1 já dá o dado central (Sobral no top 11).
+2. **Clusterização por INSE + resíduo**, para separar perfil socioeconômico de
+   entrega escolar (hoje o corte é por desempenho).
+3. **INSE por escola** — existe no INEP, não foi importado.
 4. **Seções de texto do TG** (revisão de literatura, metodologia) — fora do escopo
    de código.
-
-`ML/REGRESSAO.md` já foi atualizado: a §11 traz os resultados da base até 2025 e
-compara explicitamente com a execução anterior, incluindo a inversão em
-`anos_iniciais` e a explicação de por que o MAE subiu nos dois níveis.
 
 ---
 
 ## 7. Convenções seguidas
 
 - Decisões de design **guiadas pelos dados reais**, não pré-definidas em teoria.
-- Resultados "ruins" (baseline empatando) são tratados como achado válido.
+- Resultado fraco (correlação baixa, cluster sem separação) é achado válido.
 - Ausência de dado nunca vira zero, em nenhuma camada.
 - Nada de valor fixo no código para algo que o banco pode responder.

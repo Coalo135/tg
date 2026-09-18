@@ -11,6 +11,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # backend sem display (salva PNG)
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 sns.set_theme(style="dark")
@@ -153,6 +154,57 @@ class GeradorGrafico:
         ax.set_title(titulo, fontsize=13, fontweight="bold", pad=12)
         ax.set_xlabel(f"Indicador de Rendimento — P  (mediana = {mediana_p:.2f})")
         ax.set_ylabel(f"Nota SAEB padronizada — N  (mediana = {mediana_n:.2f})")
+        ax.set_axisbelow(True)
+        ax.grid(True, linestyle="--", linewidth=0.6, alpha=0.4, zorder=0)
+        sns.despine(ax=ax)
+        return self._salvar(fig, nome_arquivo)
+
+    def dispersao(self, df, col_x, col_y, *, reta=None, cor_por=None, destaques=None,
+                  rotulo_x=None, rotulo_y=None, titulo="Dispersão", nome_arquivo="dispersao.png"):
+        """Dispersão de duas variáveis contínuas, um ponto por linha de `df`.
+
+        Feito para milhares de pontos (um por município): marcador pequeno e
+        translúcido, para a densidade aparecer em vez de virar uma mancha.
+
+        `reta=(inclinacao, intercepto)` desenha o ajuste linear por cima.
+        `cor_por` colore por uma coluna categórica (ex.: o cluster).
+        `destaques` é um DataFrame com as mesmas colunas mais `rotulo`: esses pontos
+        ganham nome no gráfico — é assim que os outliers e os municípios de
+        referência aparecem.
+        """
+        dados = df.dropna(subset=[col_x, col_y])
+        fig, ax = plt.subplots(figsize=(9.5, 6.5))
+
+        if cor_por is None:
+            ax.scatter(dados[col_x], dados[col_y], s=12, alpha=0.3, color="#2563eb",
+                       edgecolor="none", zorder=2)
+        else:
+            for valor, grupo in dados.groupby(cor_por):
+                ax.scatter(grupo[col_x], grupo[col_y], s=12, alpha=0.5, edgecolor="none",
+                           label=f"{cor_por} {valor} (n={len(grupo)})", zorder=2)
+
+        if reta is not None:
+            inclinacao, intercepto = reta
+            xs = np.array([dados[col_x].min(), dados[col_x].max()])
+            ax.plot(xs, inclinacao * xs + intercepto, color="#dc2626", linewidth=2, zorder=3,
+                    label=f"ajuste linear: y = {inclinacao:.2f}·x {intercepto:+.2f}")
+
+        if destaques is not None and not destaques.empty:
+            ax.scatter(destaques[col_x], destaques[col_y], s=55, color="#f59e0b",
+                       edgecolor="black", linewidth=0.8, zorder=4)
+            # rótulos alternam acima/abaixo do ponto: os outliers costumam vir
+            # aglomerados, e todos para o mesmo lado viram uma mancha ilegível
+            for i, (_, linha) in enumerate(destaques.iterrows()):
+                ax.annotate(str(linha["rotulo"]), (linha[col_x], linha[col_y]),
+                            textcoords="offset points", xytext=(5, 4 if i % 2 == 0 else -10),
+                            fontsize=7, zorder=5)
+
+        if cor_por is not None or reta is not None:
+            ax.legend(fontsize=8, markerscale=2.5, loc="best")
+
+        ax.set_title(titulo, fontsize=12, fontweight="bold", pad=12)
+        ax.set_xlabel(rotulo_x or col_x)
+        ax.set_ylabel(rotulo_y or col_y)
         ax.set_axisbelow(True)
         ax.grid(True, linestyle="--", linewidth=0.6, alpha=0.4, zorder=0)
         sns.despine(ax=ax)

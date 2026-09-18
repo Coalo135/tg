@@ -42,11 +42,6 @@ def test_resultados_sem_filtro_retorna_400():
     assert client.get("/resultados").status_code == 400
 
 
-def test_previsao_nivel_invalido_retorna_400():
-    resp = client.get("/previsao/1000000", params={"nivel": "ensino_medio"})
-    assert resp.status_code == 400
-
-
 def test_escolas_sem_filtro_retorna_400():
     assert client.get("/escolas").status_code == 400
 
@@ -60,8 +55,8 @@ def test_baixar_chave_desconhecida_retorna_404():
 
 def test_planilhas_lista_o_catalogo():
     corpo = client.get("/planilhas").json()
-    assert len(corpo) == 8
-    assert {"chave", "arquivo", "abrangencia", "nivel_ensino"} <= set(corpo[0])
+    assert len(corpo) == 10
+    assert {"chave", "arquivo", "abrangencia", "nivel_ensino", "layout"} <= set(corpo[0])
 
 
 @patch("API.rotas.dados.buscar_municipios")

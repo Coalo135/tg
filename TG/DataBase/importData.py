@@ -31,7 +31,7 @@ from pathlib import Path
 import pandas as pd
 
 from Dados.descompactar import garantir_planilhas
-from Dados.planilhas import PLANILHAS
+from Dados.planilhas import por_layout
 from DataBase.conexao import conectar
 from DataBase.schema import criar_schema
 
@@ -362,7 +362,7 @@ def gravar_fatos(conexao, registros):
 def importar(conexao) -> int:
     """Percorre o catálogo de planilhas e carrega tudo. Devolve o total de fatos."""
     total = 0
-    for planilha in PLANILHAS:
+    for planilha in por_layout("ideb"):
         if not planilha.xlsx.exists():
             logger.warning("[pulado] %s não encontrado", planilha.xlsx.name)
             continue
@@ -390,12 +390,17 @@ def importar(conexao) -> int:
 
 
 def main():
+    # import local: importInse reaproveita os helpers deste módulo, e o import no
+    # topo fecharia um ciclo
+    from DataBase.importInse import importar as importar_inse
+
     garantir_planilhas()
     with conectar() as conexao:
         criar_schema(conexao)
         total = importar(conexao)
+        total_inse = importar_inse(conexao)
         conexao.execute("PRAGMA optimize;")
-    logger.info("Importação concluída: %d registros.", total)
+    logger.info("Importação concluída: %d registros do IDEB, %d do INSE.", total, total_inse)
 
 
 if __name__ == "__main__":

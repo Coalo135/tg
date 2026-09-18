@@ -1,3 +1,6 @@
+# Credenciais locais (resíduo do Supabase — o projeto não usa mais .env)
+.env
+
 # Ambiente virtual e cache do Python
 .venv/
 venv/
@@ -18,8 +21,10 @@ sqlite_ideb.db-shm
 Planilhas/*.xlsx
 Planilhas/downloads/
 
+# Bundle de CA gerado por Dados/inep_download.py (certifi + intermediário da RNP)
+Dados/certs/ca-bundle.pem
+
 # Caches e saídas geradas (todos reproduzíveis pelos scripts)
-ML/cache_*.parquet
-ML/saidas/
 Visualizacao/saidas/
 Exportacao/saidas/
+Modelos/saidas/
