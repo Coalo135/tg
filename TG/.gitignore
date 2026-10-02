@@ -28,3 +28,7 @@ Dados/certs/ca-bundle.pem
 Visualizacao/saidas/
 Exportacao/saidas/
 Modelos/saidas/
+
+# Material do artigo (texto e capturas): fica fora do repositório de código
+docs/
+Resultados/

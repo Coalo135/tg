@@ -3,11 +3,9 @@ Testes dos modelos: funções puras sobre DataFrames sintéticos, sem banco.
 """
 import numpy as np
 import pandas as pd
-import pytest
 
-from Modelos.agrupamento import agrupar, escolher_k, padronizar
+from Modelos.agrupamento import agrupar, escolher_k, outliers_por_cluster, padronizar
 from Modelos.dados import separar_completos
-from Modelos.relacao_inse_ideb import ajustar_reta, calcular_residuos, destaques
 
 
 def _pares(n=50, ruido=0.0, semente=0):
@@ -34,48 +32,7 @@ def test_separar_completos_conta_o_que_saiu():
     assert descartes == {"sem INSE": 1, "sem IDEB": 1, "sem os dois": 1}
 
 
-# --------------------------------------------------------------- modelo 1
-
-def test_ajuste_recupera_uma_relacao_linear_exata():
-    ajuste = ajustar_reta(_pares(ruido=0.0))
-    assert ajuste["inclinacao"] == pytest.approx(1.5, abs=1e-3)
-    assert ajuste["intercepto"] == pytest.approx(-2.0, abs=1e-3)
-    assert ajuste["r2"] == pytest.approx(1.0, abs=1e-6)
-    assert ajuste["pearson"] == pytest.approx(1.0, abs=1e-6)
-    assert isinstance(ajuste["r2"], float) and not isinstance(ajuste["r2"], np.floating)
-
-
-def test_ajuste_com_ruido_tem_r2_menor_que_um():
-    ajuste = ajustar_reta(_pares(ruido=0.5))
-    assert 0.5 < ajuste["r2"] < 1.0
-    assert ajuste["n"] == 50
-
-
-def test_ajuste_ignora_pares_incompletos_e_exige_minimo():
-    df = _pares(n=5)
-    df.loc[0, "ideb"] = None
-    assert ajustar_reta(df)["n"] == 4
-    with pytest.raises(ValueError):
-        ajustar_reta(df.head(2))
-
-
-def test_residuo_positivo_e_ideb_acima_do_previsto():
-    df = pd.DataFrame({"media_inse": [4.0, 4.0], "ideb": [6.0, 3.0]})
-    com = calcular_residuos(df, inclinacao=1.0, intercepto=0.5)
-    assert list(com["ideb_previsto"]) == [4.5, 4.5]
-    assert list(com["residuo"]) == [1.5, -1.5]
-
-
-def test_destaques_traz_os_extremos_com_rotulo():
-    df = calcular_residuos(_pares(ruido=0.5), 1.5, -2.0)
-    ext = destaques(df, n=3)
-    assert len(ext) == 6
-    assert ext["residuo"].iloc[0] == df["residuo"].max()
-    assert ext["residuo"].iloc[-1] == df["residuo"].min()
-    assert ext["rotulo"].iloc[0].endswith("/CE")
-
-
-# --------------------------------------------------------------- modelo 2
+# ------------------------------------------------------------ agrupamento
 
 def test_padronizar_deixa_media_zero_e_desvio_um():
     matriz = padronizar(_pares(ruido=0.3))
@@ -89,8 +46,21 @@ def test_escolher_k_pega_a_maior_silhueta():
 
 
 def test_agrupar_renumera_clusters_por_ideb_crescente():
-    df = calcular_residuos(_pares(n=90, ruido=0.2), 1.5, -2.0)
-    agrupado = agrupar(df, k=3)
+    agrupado = agrupar(_pares(n=90, ruido=0.2), k=3)
     medias = agrupado.groupby("cluster")["ideb"].mean()
     assert list(medias.index) == [0, 1, 2]
     assert medias.is_monotonic_increasing
+
+
+def test_acima_do_grupo_e_o_ideb_menos_a_media_do_cluster():
+    agrupado = agrupar(_pares(n=90, ruido=0.2), k=3)
+    esperado = agrupado["ideb"] - agrupado.groupby("cluster")["ideb"].transform("mean")
+    assert np.allclose(agrupado["acima_do_grupo"], esperado, atol=0.006)
+    assert np.allclose(agrupado.groupby("cluster")["acima_do_grupo"].mean(), 0, atol=0.01)
+
+
+def test_outliers_traz_os_n_mais_acima_de_cada_grupo():
+    df = pd.DataFrame({"cluster": [0, 0, 0, 1, 1], "acima_do_grupo": [0.5, 2.0, -1.0, 0.1, 3.0]})
+    outliers = outliers_por_cluster(df, n=2)
+    assert list(outliers["cluster"]) == [0, 0, 1, 1]
+    assert list(outliers["acima_do_grupo"]) == [2.0, 0.5, 3.0, 0.1]

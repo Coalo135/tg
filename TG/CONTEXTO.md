@@ -1,7 +1,7 @@
 # Contexto do projeto — TG (IDEB)
 
 > Briefing para retomar o projeto em qualquer conversa nova. Atualizado após a
-> entrada do INSE no banco e a construção dos dois modelos (2026-09-17). Todos os
+> entrada do INSE no banco e a construção do K-means (2026-10-02). Todos os
 > números abaixo foram lidos do banco, não estimados.
 
 ---
@@ -11,12 +11,9 @@
 Trabalho de Graduação: um **sistema de análise de dados do IDEB** (INEP/Brasil).
 
 A base de dados, as estatísticas, a exportação, os gráficos e a API estão prontos.
-Sobre eles são construídos **dois modelos** (ver §4):
-
-1. **Relação INSE × IDEB** — quanto do desempenho de um município é explicado pelo
-   nível socioeconômico dos seus alunos.
-2. **Clusterização de municípios** — agrupar por perfil e identificar os outliers
-   positivos, que entregam IDEB acima do que o INSE preveria.
+Sobre eles é construída a **clusterização de municípios** (ver §4): agrupar por
+perfil e identificar os outliers positivos, que entregam IDEB acima da média do
+próprio grupo.
 
 Estudo de caso final: foco no Ceará (Sobral como destaque, Fortaleza como capital).
 Escopo de dados: Brasil inteiro desde o início.
@@ -48,10 +45,9 @@ TG/
 ├── Estatistica/  Exportacao/  Visualizacao/
 ├── Modelos/
 │   ├── dados.py            Par INSE × IDEB pronto para modelar (conta o descarte)
-│   ├── relacao_inse_ideb.py  Modelo 1: correlação, reta, R², resíduos
-│   ├── agrupamento.py      Modelo 2: K-means, k por silhueta, outliers por cluster
+│   ├── agrupamento.py      K-means, k por silhueta, outliers por cluster
 │   └── MODELOS.md          Decisões e resultados
-├── API/          FastAPI: 10 rotas
+├── API/          FastAPI: 8 rotas
 └── tests/        66 testes
 ```
 
@@ -96,25 +92,19 @@ Três defeitos dos arquivos, medidos e tratados em `importInse.py`: o código de
 
 ## 4. Modelos (`Modelos/`)
 
-Dois modelos sobre o par INSE × IDEB por município (rede pública). Detalhes,
+Um modelo sobre o par INSE × IDEB por município (rede pública). Detalhes,
 tabelas completas e limitações em `Modelos/MODELOS.md`.
 
-1. **Relação INSE × IDEB** (`Modelos/relacao_inse_ideb.py`) — reta de mínimos
-   quadrados, Pearson, Spearman e R² por nível e ano. **O INSE explica de 15% a 39%
-   da variância do IDEB municipal** (R² de 0,39 nos anos iniciais de 2021 a 0,15 no
-   ensino médio de 2023); o efeito enfraquece ao longo da trajetória escolar e caiu
-   de 2021 para 2023. O produto é o **resíduo** (observado − previsto): a definição
-   operacional de outlier positivo. **Sobral/CE tem o 11º maior resíduo do país**
-   nos anos iniciais de 2023 (+4,29) e o 8º nos anos finais (+3,49), com INSE abaixo
-   da média; o topo é dominado por municípios do Ceará e de Alagoas.
-2. **Clusterização de municípios** (`Modelos/agrupamento.py`) — K-means sobre INSE,
-   IDEB, rendimento e SAEB padronizados. **A silhueta escolhe k = 2** (0,43 e 0,39):
-   os municípios formam um contínuo, não grupos separados. Sobral cai no cluster alto
-   apesar do INSE baixo; Fortaleza fica no mesmo cluster com resíduo pequeno.
-   Limitação: três das quatro features medem desempenho, então o corte é por
-   desempenho — agrupar por INSE + resíduo é o próximo passo.
+**Clusterização de municípios** (`Modelos/agrupamento.py`) — K-means sobre INSE,
+IDEB, rendimento e SAEB padronizados. **A silhueta escolhe k = 2** (0,43 e 0,39):
+os municípios formam um contínuo, não grupos separados. Outlier positivo é quem
+fica mais acima do IDEB médio do próprio cluster (`acima_do_grupo`). Sobral cai no
+cluster alto apesar do INSE baixo e fica +3,18 acima do grupo nos anos iniciais de
+2023; Fortaleza fica no mesmo cluster, praticamente na média. O topo é dominado por
+municípios do Ceará e de Alagoas. Limitação: três das quatro features medem
+desempenho, então o corte é por desempenho.
 
-Regras que valem para os dois: nenhum ano fixo no código (vem do banco); ausência
+Regras: nenhum ano fixo no código (vem do banco); ausência
 nunca vira zero; resultado fraco é achado válido, não bug a maquiar.
 
 ---
@@ -143,11 +133,10 @@ Todos pré-existentes, nenhum introduzido pela troca de banco:
 ## 6. O que falta
 
 1. **Estudo de caso do Ceará** detalhado, cruzando com a literatura
-   (Almeida e Vieira, 2019) — o modelo 1 já dá o dado central (Sobral no top 11).
-2. **Clusterização por INSE + resíduo**, para separar perfil socioeconômico de
-   entrega escolar (hoje o corte é por desempenho).
-3. **INSE por escola** — existe no INEP, não foi importado.
-4. **Seções de texto do TG** (revisão de literatura, metodologia) — fora do escopo
+   (Almeida e Vieira, 2019) — o K-means já dá o dado central (Sobral bem acima do
+   seu grupo).
+2. **INSE por escola** — existe no INEP, não foi importado.
+3. **Seções de texto do TG** (revisão de literatura, metodologia) — fora do escopo
    de código.
 
 ---

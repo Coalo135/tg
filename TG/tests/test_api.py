@@ -152,31 +152,15 @@ def test_evolucao_retorna_lista_ordenada(mock_buscar):
 
 # ------------------------------------------------------------------ modelos
 
-def _relacao_falsa():
-    """O que `Modelos.relacao_inse_ideb.calcular` devolve, em miniatura."""
-    municipios = pd.DataFrame([
-        {"posicao": 1, "codigo_municipio": "2312908", "nome_municipio": "Sobral",
-         "sigla_uf": "CE", "media_inse": 4.37, "ideb": 9.6, "ideb_previsto": 5.31,
-         "residuo": 4.29},
-        {"posicao": 2, "codigo_municipio": "5300108", "nome_municipio": "Brasília",
-         "sigla_uf": "DF", "media_inse": 5.6, "ideb": 6.5, "ideb_previsto": 6.63,
-         "residuo": -0.13},
-    ])
-    return {"nivel_ensino": "anos_iniciais", "ano": 2023,
-            "ajuste": {"n": 2, "pearson": 0.55, "spearman": 0.59, "r2": 0.31,
-                       "inclinacao": 1.08, "intercepto": 0.59},
-            "descartes": {"sem IDEB": 129}, "municipios": municipios}
-
-
 def _agrupamento_falso():
     municipios = pd.DataFrame([
         {"cluster": 1, "codigo_municipio": "2312908", "nome_municipio": "Sobral",
          "sigla_uf": "CE", "media_inse": 4.37, "ideb": 9.6, "indicador_rendimento_p": 0.99,
-         "nota_saeb_media_padronizada_n": 9.7, "ideb_previsto": 5.31, "residuo": 4.29},
+         "nota_saeb_media_padronizada_n": 9.7, "acima_do_grupo": 3.18},
     ])
     perfil = pd.DataFrame(
         [{"municipios": 1, "media_inse": 4.37, "ideb": 9.6, "indicador_rendimento_p": 0.99,
-          "nota_saeb_media_padronizada_n": 9.7, "residuo": 4.29}],
+          "nota_saeb_media_padronizada_n": 9.7}],
         index=pd.Index([1], name="cluster"))
     return {"nivel_ensino": "anos_iniciais", "ano": 2023, "k": 2, "descartes": {},
             "avaliacao": pd.DataFrame([{"k": 2, "inercia": 1.0, "silhueta": 0.43}]),
@@ -185,51 +169,16 @@ def _agrupamento_falso():
 
 @patch("API.rotas.modelos.anos_disponiveis", return_value=[2021, 2023])
 def test_modelos_nivel_invalido_retorna_400(_anos):
-    resp = client.get("/modelos/relacao-inse-ideb", params={"nivel_ensino": "fundamental"})
+    resp = client.get("/modelos/agrupamento", params={"nivel_ensino": "fundamental"})
     assert resp.status_code == 400
 
 
 @patch("API.rotas.modelos.anos_disponiveis", return_value=[2021, 2023])
 def test_modelos_ano_sem_inse_retorna_404(_anos):
-    resp = client.get("/modelos/relacao-inse-ideb",
+    resp = client.get("/modelos/agrupamento",
                       params={"nivel_ensino": "anos_iniciais", "ano": 2025})
     assert resp.status_code == 404
     assert "2021" in resp.json()["detail"]
-
-
-@patch("API.rotas.modelos.calcular_relacao", return_value=_relacao_falsa())
-@patch("API.rotas.modelos.anos_disponiveis", return_value=[2021, 2023])
-def test_relacao_devolve_ajuste_e_recorta_por_uf(_anos, mock_calc):
-    corpo = client.get("/modelos/relacao-inse-ideb",
-                       params={"nivel_ensino": "anos_iniciais", "sigla_uf": "ce"}).json()
-
-    assert corpo["ano"] == 2023  # sem `ano`, vale o mais recente com INSE
-    assert corpo["ajuste"]["r2"] == 0.31
-    assert corpo["total"] == 2   # o total é nacional, o recorte é só da lista
-    assert [m["nome_municipio"] for m in corpo["municipios"]] == ["Sobral"]
-    assert corpo["municipios"][0]["posicao"] == 1
-    mock_calc.assert_called_once_with("anos_iniciais", 2023)
-
-
-@patch("API.rotas.modelos.calcular_agrupamento", return_value=_agrupamento_falso())
-@patch("API.rotas.modelos.calcular_relacao", return_value=_relacao_falsa())
-@patch("API.rotas.modelos.anos_disponiveis", return_value=[2021, 2023])
-def test_municipio_traz_previsao_posicao_e_cluster(_anos, _rel, _agr):
-    corpo = client.get("/modelos/municipio/2312908",
-                       params={"nivel_ensino": "anos_iniciais", "ano": 2023}).json()
-
-    assert corpo["ideb"] == 9.6 and corpo["ideb_previsto"] == 5.31
-    assert corpo["residuo"] == 4.29 and corpo["posicao"] == 1 and corpo["total"] == 2
-    assert corpo["cluster"] == 1 and corpo["k"] == 2
-    assert corpo["cluster_perfil"]["ideb"] == 9.6
-
-
-@patch("API.rotas.modelos.calcular_agrupamento", return_value=None)
-@patch("API.rotas.modelos.calcular_relacao", return_value=_relacao_falsa())
-@patch("API.rotas.modelos.anos_disponiveis", return_value=[2021, 2023])
-def test_municipio_sem_par_retorna_404(_anos, _rel, _agr):
-    resp = client.get("/modelos/municipio/9999999", params={"nivel_ensino": "anos_iniciais"})
-    assert resp.status_code == 404
 
 
 @patch("API.rotas.modelos.calcular_agrupamento", return_value=_agrupamento_falso())
@@ -241,3 +190,4 @@ def test_agrupamento_devolve_k_perfil_e_municipios(_anos, _agr):
     assert corpo["perfil"][0]["cluster"] == 1 and corpo["perfil"][0]["municipios"] == 1
     assert corpo["avaliacao"][0]["silhueta"] == 0.43
     assert corpo["municipios"][0]["cluster"] == 1
+    assert corpo["outliers"][0]["acima_do_grupo"] == 3.18

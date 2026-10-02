@@ -1,7 +1,7 @@
 """
 consulta_inse.py — Consultas sobre o INSE e sobre o par INSE × IDEB por município.
 
-O par é o insumo dos dois modelos de `Modelos/`: cada linha é um município num
+O par é o insumo do K-means de `Modelos/`: cada linha é um município num
 ano, com o nível socioeconômico dos alunos de um lado e o IDEB (e seus
 componentes) do outro, para uma rede e um nível de ensino.
 
