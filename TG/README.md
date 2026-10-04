@@ -2,8 +2,8 @@
 
 Trabalho de Graduação: pipeline de dados do **IDEB** (Índice de Desenvolvimento da
 Educação Básica / INEP) com banco **SQLite local**, estatísticas descritivas,
-exportação, gráficos e a clusterização de municípios (K-means) sobre o cruzamento
-com o **INSE** (Indicador de Nível Socioeconômico).
+exportação, gráficos e dois modelos sobre o cruzamento com o **INSE** (Indicador de
+Nível Socioeconômico): a relação INSE × IDEB e a clusterização de municípios.
 
 Cobertura atual do banco: IDEB de **2005 a 2025**, bienal, nos quatro níveis de
 abrangência (Brasil, região/UF, município, escola); INSE de **2021 e 2023**, por
@@ -22,7 +22,8 @@ pip install -r requirements-dev.txt      # + pytest e ruff
 python -m DataBase.importData            # descompacta as planilhas e monta o banco (IDEB + INSE)
 python -m DataBase.check_BD              # 69 verificações de integridade
 python main.py                           # pipeline de demonstração (Brasília/DF)
-python -m Modelos.agrupamento            # clusterização de municípios (K-means)
+python -m Modelos.relacao_inse_ideb      # modelo 1: relação INSE × IDEB
+python -m Modelos.agrupamento            # modelo 2: clusterização de municípios
 ```
 
 Não há `.env` nem credenciais: o banco é um arquivo local.
@@ -75,7 +76,8 @@ Todos os comandos assumem `cd TG` e o venv ativo.
 | Reimportar só o INSE | `python -m DataBase.importInse` |
 | Checkup de integridade | `python -m DataBase.check_BD` |
 | Pipeline de demonstração | `python main.py` |
-| Clusterização de municípios | `python -m Modelos.agrupamento` |
+| Modelo 1 — relação INSE × IDEB | `python -m Modelos.relacao_inse_ideb` |
+| Modelo 2 — clusterização | `python -m Modelos.agrupamento` |
 | API | `uvicorn API.main:app --reload` (docs em `/docs`) |
 | Testes | `pytest` |
 | Lint | `ruff check .` |
@@ -97,8 +99,10 @@ do projeto (`from Dados.consulta_ideb import ...`) e são executados com `python
 | `GET /estatisticas?...` | Médias agregadas, prontas para gráfico |
 | `GET /comparacao-meta?...` | IDEB observado vs. meta do INEP (`resumo` + `detalhes`) |
 | `GET /evolucao?anos=2019&anos=2021...` | Série histórica do IDEB médio |
-| `GET /modelos/anos` | Anos com INSE — os únicos em que o modelo existe |
-| `GET /modelos/agrupamento?nivel_ensino=` | Clusters (K-means), perfil de cada um e outliers |
+| `GET /modelos/anos` | Anos com INSE — os únicos em que os modelos existem |
+| `GET /modelos/relacao-inse-ideb?nivel_ensino=` | Modelo 1: reta IDEB ~ INSE e o resíduo de cada município, ranqueado |
+| `GET /modelos/agrupamento?nivel_ensino=` | Modelo 2: clusters (K-means), perfil de cada um e outliers |
+| `GET /modelos/municipio/{codigo}?nivel_ensino=` | A "previsão" de um município: observado, previsto pelo INSE, resíduo, posição, cluster |
 | `GET /planilhas` | Catálogo (IDEB e INSE) e o que já está em disco |
 | `GET /baixar?chave=inse_municipios_2023` | Baixa uma planilha do INEP e deixa o `.xlsx` pronto |
 
@@ -129,8 +133,8 @@ O CORS está aberto (`*`) por ser projeto acadêmico sem front-end em produção
 | `DataBase/check_BD.py` | 69 verificações de integridade (só leitura) |
 | `Estatistica/` | Cálculos sobre um DataFrame já filtrado |
 | `Exportacao/` | CSV, deixando ausências explícitas |
-| `Visualizacao/` | `GeradorGrafico`: linha, barra, dispersão por quadrante e dispersão por cluster |
-| `Modelos/` | Clusterização de municípios (K-means); ver `Modelos/MODELOS.md` |
+| `Visualizacao/` | `GeradorGrafico`: linha, barra, dispersão por quadrante e dispersão com ajuste |
+| `Modelos/` | Modelo 1 (relação INSE × IDEB, resíduos) e modelo 2 (K-means); ver `Modelos/MODELOS.md` |
 
 ---
 
@@ -176,8 +180,10 @@ O projeto usava Supabase/PostgREST. O que mudou:
 
 ## Pendências conhecidas
 
-- **Estudo de caso do Ceará** aprofundado ainda não escrito — o K-means já mostra
-  Sobral entre os municípios mais acima do seu grupo (`Modelos/MODELOS.md`).
+- **Estudo de caso do Ceará** aprofundado ainda não escrito — o modelo 1 já mostra
+  Sobral entre os 11 maiores resíduos positivos do país (`Modelos/MODELOS.md`).
 - **INSE por escola** existe no INEP e não foi importado; só o de município entrou.
+- **Clusterização por INSE + resíduo** (em vez de INSE + desempenho) separaria
+  melhor perfil socioeconômico de entrega escolar; ver `Modelos/MODELOS.md` §3.
 - **Nomes de pastas misturam português e inglês** e usam PascalCase em vez de
   `snake_case`. Renomear tocaria todos os imports; deixado como está de propósito.

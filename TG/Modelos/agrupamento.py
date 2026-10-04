@@ -1,11 +1,11 @@
 """
-agrupamento.py — Clusterização de municípios (K-means).
+agrupamento.py — Modelo 2: clusterização de municípios (K-means).
 
 Agrupa os municípios da rede pública por perfil — nível socioeconômico dos alunos,
 IDEB, rendimento (aprovação) e desempenho (SAEB) — e procura, dentro de cada grupo,
-quem fica mais acima do IDEB médio do próprio grupo (`acima_do_grupo`). Sobral/CE é
-o caso da literatura e serve de sanity check: deveria aparecer entre os mais altos
-do seu cluster.
+quem entrega mais do que o grupo faria esperar. O "esperar" vem do modelo 1: o
+resíduo IDEB − previsto pelo INSE. Sobral/CE é o caso da literatura e serve de
+sanity check: deveria aparecer entre os resíduos mais altos do seu cluster.
 
 O número de grupos não é cravado: para cada k de 2 a 8 o script reporta inércia
 (cotovelo) e silhueta, e usa o k de maior silhueta.
@@ -23,6 +23,7 @@ from sklearn.preprocessing import StandardScaler
 from config import PASTA_MODELOS
 from Exportacao.exportar import exportar_para_csv
 from Modelos.dados import FORTALEZA, SOBRAL, anos_disponiveis, carregar_pares
+from Modelos.relacao_inse_ideb import ajustar_reta, calcular_residuos
 from Visualizacao.gerador_grafico import GeradorGrafico
 
 logger = logging.getLogger(__name__)
@@ -59,30 +60,27 @@ def escolher_k(avaliacao: pd.DataFrame) -> int:
 
 def agrupar(df: pd.DataFrame, k: int, features=FEATURES) -> pd.DataFrame:
     """Acrescenta a coluna `cluster`, com os grupos renumerados por IDEB médio crescente
-    para o rótulo ter leitura (0 = pior desempenho, k−1 = melhor), e `acima_do_grupo`:
-    o IDEB do município menos o IDEB médio do seu cluster."""
+    para o rótulo ter leitura (0 = pior desempenho, k−1 = melhor)."""
     matriz = padronizar(df, features)
     rotulos = KMeans(n_clusters=k, n_init=10, random_state=SEMENTE).fit_predict(matriz)
     saida = df.copy()
     saida["cluster"] = rotulos
     ordem = saida.groupby("cluster")["ideb"].mean().sort_values().index
     saida["cluster"] = saida["cluster"].map({antigo: novo for novo, antigo in enumerate(ordem)})
-    media_grupo = saida.groupby("cluster")["ideb"].transform("mean")
-    saida["acima_do_grupo"] = (saida["ideb"] - media_grupo).round(2)
     return saida
 
 
 def perfil_clusters(df: pd.DataFrame, features=FEATURES) -> pd.DataFrame:
-    perfil = df.groupby("cluster")[list(features)].mean().round(2)
+    perfil = df.groupby("cluster")[list(features) + ["residuo"]].mean().round(2)
     perfil.insert(0, "municipios", df.groupby("cluster").size())
     return perfil
 
 
 def outliers_por_cluster(df: pd.DataFrame, n: int = 5) -> pd.DataFrame:
-    """Os n municípios mais acima do IDEB médio dentro de cada cluster."""
-    return (df.sort_values("acima_do_grupo", ascending=False)
+    """Os n maiores resíduos positivos dentro de cada cluster."""
+    return (df.sort_values("residuo", ascending=False)
               .groupby("cluster").head(n)
-              .sort_values(["cluster", "acima_do_grupo"], ascending=[True, False]))
+              .sort_values(["cluster", "residuo"], ascending=[True, False]))
 
 
 def calcular(nivel_ensino: str, ano: int) -> dict | None:
@@ -93,6 +91,9 @@ def calcular(nivel_ensino: str, ano: int) -> dict | None:
         logger.warning("%s/%d: sem base para agrupar (%d municípios)",
                        nivel_ensino, ano, len(pares))
         return None
+
+    ajuste = ajustar_reta(pares)
+    pares = calcular_residuos(pares, ajuste["inclinacao"], ajuste["intercepto"])
 
     avaliacao = avaliar_k(padronizar(pares))
     k = escolher_k(avaliacao)
@@ -113,7 +114,7 @@ def executar(nivel_ensino: str, ano: int) -> dict | None:
                                   resultado["outliers"])
 
     sufixo = f"{nivel_ensino}_{ano}"
-    exportar_para_csv(agrupado.sort_values(["cluster", "acima_do_grupo"], ascending=[True, False]),
+    exportar_para_csv(agrupado.sort_values(["cluster", "residuo"], ascending=[True, False]),
                       PASTA_MODELOS / f"clusters_{sufixo}.csv")
     referencia = agrupado[agrupado["codigo_municipio"].isin([SOBRAL, FORTALEZA])]
     referencia = referencia.assign(
@@ -131,9 +132,9 @@ def executar(nivel_ensino: str, ano: int) -> dict | None:
     print(avaliacao.to_string(index=False))
     print(f"\nk escolhido pela silhueta: {k}\n\nPerfil dos clusters (médias):")
     print(perfil.to_string())
-    print(f"\nOutliers positivos por cluster (top {5}, IDEB acima da média do cluster):")
+    print(f"\nOutliers positivos por cluster (top {5}, resíduo do modelo 1):")
     colunas = ["cluster", "nome_municipio", "sigla_uf", "media_inse", "ideb",
-               "acima_do_grupo"]
+               "ideb_previsto", "residuo"]
     print(outliers[colunas].to_string(index=False))
     if not referencia.empty:
         print("\nReferências da literatura:")

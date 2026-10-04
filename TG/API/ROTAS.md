@@ -203,23 +203,79 @@ montar as telas. As chaves válidas (IDEB e INSE) estão em `GET /planilhas`, qu
 | KPI/pizza "quantos atingiram a meta" | `GET /comparacao-meta?...` → `resumo` |
 | Tabela/dispersão IDEB × meta | `GET /comparacao-meta?...` → `detalhes` |
 | Gráfico de linha (evolução temporal) | `GET /evolucao?anos=...` |
+| Card "previsão" do município (INSE → IDEB) | `GET /modelos/municipio/{codigo}?nivel_ensino=` |
+| Dispersão INSE × IDEB + ranking de resíduos | `GET /modelos/relacao-inse-ideb?nivel_ensino=` |
 | Grupos de municípios (clusters) | `GET /modelos/agrupamento?nivel_ensino=` |
 
 ---
 
 ## Modelos — `GET /modelos/*`
 
-O K-means de `Modelos/` (ver `Modelos/MODELOS.md`), calculado sob demanda e em cache por
-(nível, ano). Só existe para os anos com INSE — hoje **2021 e 2023**; `GET /modelos/anos` diz
-quais. `ano` é opcional: sem ele, vale o mais recente. `nivel_ensino` é obrigatório. `sigla_uf`
-recorta só a lista `municipios`; os grupos, os `outliers` e o `total` são sempre nacionais.
+Os dois modelos de `Modelos/` (ver `Modelos/MODELOS.md`), calculados sob demanda e em cache por
+(nível, ano). Só existem para os anos com INSE — hoje **2021 e 2023**; `GET /modelos/anos` diz
+quais. `ano` é opcional em todas as rotas: sem ele, vale o mais recente. `nivel_ensino` é
+obrigatório. `sigla_uf` recorta só a lista devolvida; o ajuste, o ranking e o `total` são sempre
+nacionais.
 
 **Primeira chamada de cada (nível, ano) demora ~1,5 s** (é o K-means rodando); as seguintes
 respondem em ~20 ms.
 
+### `GET /modelos/municipio/{codigo_municipio}?nivel_ensino=`
+
+A "previsão" de um município — o que a antiga `/previsao` fazia, agora com base no INSE.
+
+```
+GET /modelos/municipio/2312908?nivel_ensino=anos_iniciais&ano=2023
+```
+```json
+{
+  "posicao": 11, "total": 5429,
+  "codigo_municipio": "2312908", "nome_municipio": "Sobral", "sigla_uf": "CE",
+  "media_inse": 4.3732, "ideb": 9.6, "ideb_previsto": 5.31, "residuo": 4.29,
+  "nivel_ensino": "anos_iniciais", "ano": 2023,
+  "ajuste": { "n": 5429, "pearson": 0.5529, "spearman": 0.5855, "r2": 0.3057,
+              "inclinacao": 1.0793, "intercepto": 0.5877 },
+  "cluster": 1, "k": 2,
+  "cluster_perfil": { "cluster": 1, "municipios": 3253, "media_inse": 5.12, "ideb": 6.42,
+                      "indicador_rendimento_p": 0.98, "nota_saeb_media_padronizada_n": 6.52,
+                      "residuo": 0.31 }
+}
+```
+
+- `ideb_previsto` é o IDEB que o nível socioeconômico dos alunos faria esperar; `residuo` é
+  observado − previsto. **Resíduo positivo = entrega acima do esperado.**
+- `posicao` é o lugar no ranking nacional de resíduo (1 = maior). Sobral é o 11º de 5.429.
+- `cluster` e `cluster_perfil` vêm nulos quando o modelo 2 não tem base nesse nível/ano.
+- Município sem par INSE × IDEB no ano/nível → `HTTP 404`. `ano` sem INSE → `404` listando os
+  anos válidos. `nivel_ensino` inválido → `400`. Banco sem INSE → `503`.
+
+### `GET /modelos/relacao-inse-ideb?nivel_ensino=`
+
+Modelo 1 inteiro: o ajuste e **todos os municípios** com resíduo, ordenados do maior resíduo
+para o menor (`posicao` 1 → N). Payload de ~850 KB para o Brasil inteiro; com `sigla_uf=CE`,
+~30 KB.
+
+```json
+{
+  "nivel_ensino": "anos_iniciais", "ano": 2023,
+  "ajuste": { "n": 5429, "pearson": 0.5529, "spearman": 0.5855, "r2": 0.3057,
+              "inclinacao": 1.0793, "intercepto": 0.5877 },
+  "descartes": { "sem INSE": 0, "sem IDEB": 129, "sem os dois": 0 },
+  "total": 5429,
+  "municipios": [
+    { "posicao": 1, "codigo_municipio": "2310951", "nome_municipio": "Pires Ferreira",
+      "sigla_uf": "CE", "media_inse": 4.1623, "ideb": 10.0, "ideb_previsto": 5.08,
+      "residuo": 4.92 }
+  ]
+}
+```
+
+Para a dispersão: `x = media_inse`, `y = ideb`, e a reta é `y = inclinacao·x + intercepto`.
+Para o ranking: os primeiros são os outliers positivos, os últimos os negativos.
+
 ### `GET /modelos/agrupamento?nivel_ensino=`
 
-K-means com o `k` escolhido pela silhueta (2 nos dois níveis). Clusters numerados
+Modelo 2: K-means com o `k` escolhido pela silhueta (2 nos dois níveis). Clusters numerados
 por IDEB médio crescente (0 = pior desempenho).
 
 ```json
@@ -228,20 +284,19 @@ por IDEB médio crescente (0 = pior desempenho).
   "avaliacao": [ { "k": 2, "inercia": 11847.4, "silhueta": 0.3938 }, ... ],
   "perfil": [
     { "cluster": 0, "municipios": 2246, "media_inse": 4.49, "ideb": 4.1,
-      "indicador_rendimento_p": 0.89, "nota_saeb_media_padronizada_n": 4.61 },
+      "indicador_rendimento_p": 0.89, "nota_saeb_media_padronizada_n": 4.61, "residuo": -0.4 },
     { "cluster": 1, "municipios": 3135, "media_inse": 5.11, "ideb": 5.24,
-      "indicador_rendimento_p": 0.96, "nota_saeb_media_padronizada_n": 5.44 }
+      "indicador_rendimento_p": 0.96, "nota_saeb_media_padronizada_n": 5.44, "residuo": 0.28 }
   ],
-  "outliers": [ "...os 5 municípios mais acima do IDEB médio de cada cluster, mesmas colunas de municipios" ],
+  "outliers": [ "...os 5 maiores resíduos de cada cluster, mesmas colunas de municipios" ],
   "total": 5381,
   "municipios": [
     { "cluster": 1, "codigo_municipio": "1100015", "nome_municipio": "Alta Floresta D'Oeste",
       "sigla_uf": "RO", "media_inse": 4.9904, "ideb": 4.7, "indicador_rendimento_p": 0.9317,
-      "nota_saeb_media_padronizada_n": 5.0053, "acima_do_grupo": -0.54 }
+      "nota_saeb_media_padronizada_n": 5.0053, "ideb_previsto": 4.87, "residuo": -0.17 }
   ]
 }
 ```
 
 - `perfil` → tabela/cards de cada grupo. `municipios` → dispersão colorida por `cluster`.
 - `outliers` → "quem entrega mais dentro do seu grupo".
-- `acima_do_grupo` = IDEB do município − IDEB médio do seu cluster. Positivo = acima do grupo.

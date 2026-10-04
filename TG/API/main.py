@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="IDEB API",
-    description=("Consulta, estatísticas e clusterização de municípios (INSE × IDEB) "
+    description=("Consulta, estatísticas e modelos (INSE × IDEB, clusterização) "
                  "sobre os dados do IDEB (INEP)."),
 )
 
