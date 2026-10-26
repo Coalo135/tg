@@ -1,7 +1,7 @@
 """
 main.py — Aplicação FastAPI: monta os routers e expõe a rota de ingestão.
 
-    uvicorn API.main:app --reload      (a partir de TG/)
+    uvicorn API.main:app --reload  (a partir de TG/)
 
 Documentação interativa em /docs.
 """
